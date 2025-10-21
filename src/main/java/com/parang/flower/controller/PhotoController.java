@@ -2,81 +2,103 @@ package com.parang.flower.controller;
 
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
-import org.springframework.web.server.ResponseStatusException;
 
 import com.parang.flower.dto.CreatePhotoRequest;
-import com.parang.flower.dto.PhotoResponse;
+import com.parang.flower.dto.UpdatePhotoRequest;
+import com.parang.flower.entity.Photo;
+import com.parang.flower.repository.PhotoRepository;
 import com.parang.flower.service.PhotoService;
 
-import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
 import java.io.IOException;
-
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
-import org.springframework.http.HttpStatus;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import org.springframework.http.MediaType;
-import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestPart;
-import org.springframework.web.bind.annotation.ResponseStatus;
-
 
 @RestController
-@RequestMapping("/api/photos")
+@RequestMapping("/photo")
 @RequiredArgsConstructor
 public class PhotoController {
 
-  private final PhotoService service;
+  private final PhotoService photoService;
+  private final PhotoRepository photoRepository;
 
-  @Value("${app.public-base-url:}") // 선택: 절대 URL 만들 때 사용 (프론트 .env와 달라도 됨)
-  private String publicBaseUrl;
-
-  private String base(HttpServletRequest req) {
-    // publicBaseUrl 지정이 있으면 그걸 사용, 아니면 요청 호스트로
-    if (publicBaseUrl != null && !publicBaseUrl.isBlank()) return publicBaseUrl;
-    String scheme = req.getScheme(); // http
-    String host = req.getServerName(); // localhost
-    int port = req.getServerPort(); // 8080
-    return scheme + "://" + host + (port == 80 || port == 443 ? "" : ":" + port);
-  }
-
-  /** 업로드: multipart/form-data
-   *  form-data: file(binary), name(text), writer(text)
-   */
-  @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-  public PhotoResponse upload(
+  // 생성: POST /photos  (파일+JSON)
+  @PostMapping(value="/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+  public ResponseEntity<Map<String,Object>> create(
       @RequestPart("file") MultipartFile file,
-      @RequestPart(required = false) String name,
-      @RequestPart(required = false) String writer,
-      HttpServletRequest req
+      @Valid @RequestPart("data") CreatePhotoRequest req
   ) throws IOException {
-    var saved = service.save(file, new CreatePhotoRequest(name, writer));
-    return PhotoResponse.from(saved, base(req));
+    // writer는 로그인 붙이면 서버에서 채움
+    var saved = photoService.save(file, req /*, writerFromAuth */);
+    return ResponseEntity
+        .status(201)
+        .body(toResp(saved));
   }
 
-  /** 목록: ?page=0&size=12&sort=createdAt,desc */
-  @GetMapping
-  public Page<PhotoResponse> list(Pageable pageable, HttpServletRequest req) {
-    String b = base(req);
-    return service.list(pageable).map(p -> PhotoResponse.from(p, b));
+  // 수정(전체 갱신): PUT /photos/{id} (파일은 선택: 있으면 교체, 없으면 유지)
+  @PutMapping(value="/{id}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+  public ResponseEntity<Map<String,Object>> update(
+      @PathVariable Long id,
+      @RequestPart(value="file", required=false) MultipartFile file,
+      @Valid @RequestPart("data") UpdatePhotoRequest req
+  ) throws IOException {
+    var saved = photoService.save(file, null);
+    return ResponseEntity.ok(toResp(saved));
   }
 
-  @GetMapping("/{id}")
-  public PhotoResponse get(@PathVariable Long id, HttpServletRequest req) {
-    var p = service.find(id).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
-    return PhotoResponse.from(p, base(req));
+  private Map<String,Object> toResp(Photo p) {
+    return Map.of(
+      "id", p.getId(),
+      "title", p.getTitle(),
+      "content", p.getContent(),
+      "name", p.getName(),
+      "writer", p.getWriter(),
+      "url", p.getImagePath(),
+      "createdAt", p.getCreatedAt(),
+      "updatedAt", p.getUpdatedAt()
+    );
   }
 
-  @DeleteMapping("/{id}")
-  @ResponseStatus(HttpStatus.NO_CONTENT)
-  public void delete(@PathVariable Long id) {
-    service.delete(id);
+  // ---- 유효성 오류 400 응답 ----
+  @ExceptionHandler(MethodArgumentNotValidException.class)
+  public ResponseEntity<Map<String, Object>> handleValidation(MethodArgumentNotValidException ex) {
+      Map<String, String> errors = new HashMap<>();
+      for (var err : ex.getBindingResult().getFieldErrors()) {
+          errors.put(err.getField(), err.getDefaultMessage());
+      }
+      return ResponseEntity.badRequest().body(Map.of(
+              "message", "Validation failed",
+              "errors", errors
+      ));
   }
+
+  // @GetMapping
+  // public List<Map<String, Object>> list() {
+  //   return photoRepository.findAll().stream()
+  //       .map(p -> Map.of(
+  //           "id", p.getId(),
+  //           "title", p.getTitle(),
+  //           "name", p.getName(),
+  //           "url", p.getImagePath(),
+  //           "content", p.getContent(),
+  //           "writer", p.getWriter(),
+  //           "createdAt", p.getCreatedAt(),
+  //           "updatedAt", p.getUpdatedAt()
+  //       ))
+  //       .toList();
+  // }
 }
 

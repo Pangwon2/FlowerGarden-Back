@@ -17,17 +17,24 @@ import java.time.Instant;
 @EntityListeners(AuditingEntityListener.class)
 public class Photo {
 
-  @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
+  @Id
+  @GeneratedValue(strategy = GenerationType.IDENTITY)
   private Long id;
 
-  @Column(nullable = false, length = 150)
-  private String name;               // 표시 이름(파일명과 달라도 됨)
+  @Column(nullable = false, length = 30)
+  private String title;    // 게시물 제목
+
+  @Column(length = 300)
+  private String content;  // 게시물 내용
+
+  @Column(nullable = false, length = 30)
+  private String name;     // 표시 이름 (이미지명 또는 사진 이름)
 
   @Column(length = 10)
-  private String writer;             // 작성자
+  private String writer;   // 작성자
 
   @Column(nullable = false, length = 255)
-  private String imagePath;          // "/files/uuid.jpg"
+  private String imagePath; // "/files/uuid.jpg"
 
   @CreatedDate
   @Column(nullable = false, updatable = false)
